@@ -154,12 +154,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!supabase || !user) return;
+    const client = supabase;
+    const activeUser = user;
+    if (!client || !activeUser) return;
     let cancelled = false;
     const loadPlayerData = async () => {
       const [{ data: profile }, { data: scores }] = await Promise.all([
-        supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle(),
-        supabase.from('game_scores').select('game_id, score').eq('user_id', user.id)
+        client.from('profiles').select('display_name').eq('id', activeUser.id).maybeSingle(),
+        client.from('game_scores').select('game_id, score').eq('user_id', activeUser.id)
       ]);
       if (cancelled) return;
       if (profile?.display_name) {
