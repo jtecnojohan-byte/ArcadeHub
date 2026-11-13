@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { supabase } from './supabaseClient';
 import { ArrowLeft, ArrowUp, ArrowDown, ArrowRight, Gamepad2, Trophy, Zap, Play, RotateCcw, Sparkles, Award, UserRound, Medal } from 'lucide-react';
 
 type GameId = 'snake' | 'dash' | 'space';
@@ -129,6 +130,11 @@ function SpaceGame({ onBack, onScore }: { onBack: () => void; onScore: (score: n
 
 export default function App() {
   const [game, setGame] = useState<GameId | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('arcadehub-player') || 'Jugador 1');
   const [played, setPlayed] = useState<Record<GameId, number>>(() => {
     try { return JSON.parse(localStorage.getItem('arcadehub-played') || '{"snake":0,"dash":0,"space":0}'); }
@@ -138,13 +144,72 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('arcadehub-best') || '{"snake":0,"dash":0,"space":0}'); }
     catch { return { snake: 0, dash: 0, space: 0 }; }
   });
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !user) return;
+    let cancelled = false;
+    const loadPlayerData = async () => {
+      const [{ data: profile }, { data: scores }] = await Promise.all([
+        supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle(),
+        supabase.from('game_scores').select('game_id, score').eq('user_id', user.id)
+      ]);
+      if (cancelled) return;
+      if (profile?.display_name) {
+        setPlayerName(profile.display_name);
+        localStorage.setItem('arcadehub-player', profile.display_name);
+      }
+      if (scores) {
+        setBest((old) => {
+          const next = { ...old };
+          for (const row of scores) {
+            const id = row.game_id as GameId;
+            if (id in next) next[id] = Math.max(next[id], row.score);
+          }
+          localStorage.setItem('arcadehub-best', JSON.stringify(next));
+          return next;
+        });
+      }
+    };
+    void loadPlayerData();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const handleAuth = async (event: FormEvent<HTMLFormElement>, mode: 'signin' | 'signup') => {
+    event.preventDefault();
+    if (!supabase) return;
+    setAuthBusy(true);
+    setAuthMessage('');
+    const result = mode === 'signup'
+      ? await supabase.auth.signUp({ email: authEmail, password: authPassword, options: { data: { display_name: playerName } } })
+      : await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    setAuthBusy(false);
+    if (result.error) setAuthMessage(result.error.message);
+    else if (mode === 'signup' && !result.data.session) setAuthMessage('¡Cuenta creada! Revisa tu correo para confirmar el registro.');
+    else setAuthMessage('¡Sesión iniciada! Tus récords ya se sincronizan.');
+    setAuthPassword('');
+  };
+
   const saveScore = useCallback((id: GameId, score: number) => {
     setBest((old) => {
       const next = { ...old, [id]: Math.max(old[id], score) };
       localStorage.setItem('arcadehub-best', JSON.stringify(next));
+      if (supabase && user) {
+        void supabase.from('game_scores').upsert(
+          { user_id: user.id, game_id: id, score: next[id] },
+          { onConflict: 'user_id,game_id' }
+        );
+      }
       return next;
     });
-  }, []);
+  }, [user]);
   const launchGame = (id: GameId) => {
     setPlayed((old) => {
       const next = { ...old, [id]: old[id] + 1 };
@@ -159,6 +224,9 @@ export default function App() {
       const clean = value.trim().slice(0, 18);
       setPlayerName(clean);
       localStorage.setItem('arcadehub-player', clean);
+      if (supabase && user) {
+        void supabase.from('profiles').update({ display_name: clean, updated_at: new Date().toISOString() }).eq('id', user.id);
+      }
     }
   };
   const totalPlays = Object.values(played).reduce((sum, value) => sum + value, 0);
@@ -176,7 +244,7 @@ export default function App() {
   if (game === 'space') return <main className="app-shell"><SpaceGame onBack={() => setGame(null)} onScore={(s) => saveScore('space', s)} /></main>;
 
   return <main className="app-shell">
-    <header className="topbar"><a className="brand" href="#"><span className="brand-mark"><Gamepad2 size={23} /></span>Arcade<span className="gradient-text">Hub</span></a><div className="top-status"><span className="status-dot" /> SALA ABIERTA</div></header>
+    <header className="topbar"><a className="brand" href="#"><span className="brand-mark"><Gamepad2 size={23} /></span>Arcade<span className="gradient-text">Hub</span></a><div className="top-status"><span className="status-dot" /> {user ? 'CUENTA CONECTADA' : 'SALA ABIERTA'}</div></header>
     <section className="hero">
       <div className="hero-copy"><div className="eyebrow"><Sparkles size={14} /> TU NUEVA SALA DE JUEGOS</div><h1>Un mundo de juegos.<br /><span className="gradient-text">Una sola pantalla.</span></h1><p>Entra, elige tu minijuego y rompe tu propio récord. La diversión empieza aquí.</p><button className="primary-btn hero-btn" onClick={() => document.getElementById('games')?.scrollIntoView({ behavior: 'smooth' })}><Play size={17} fill="currentColor" /> Explorar juegos</button></div>
       <div className="hero-art"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="console"><div className="console-screen"><span>ARCADE</span><strong>HUB<span>_</span></strong><small>INSERT COIN TO PLAY</small></div><div className="console-controls"><i /><b /><b /><b /><b /></div></div><div className="floating-chip chip-one">✦ +10</div><div className="floating-chip chip-two">PLAYER 1</div></div>
@@ -187,6 +255,18 @@ export default function App() {
         <button className="game-card dash-card" onClick={() => launchGame('dash')}><div className="card-art dash-art"><span className="dash-symbol">▦</span><span className="art-label">02 / REFLEJOS</span></div><div className="card-info"><div><h3>Pixel Dash</h3><p>Tu velocidad manda.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.dash}</span></div></button>
         <button className="game-card space-card" onClick={() => launchGame('space')}><div className="card-art space-art"><span className="planet">✦</span><span className="art-label">03 / ARCADE</span></div><div className="card-info"><div><h3>Space Tap</h3><p>La galaxia necesita tu ayuda.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.space}</span></div></button>
       </div>
+    </section>
+    <section className="account-section">
+      <div className="profile-heading"><div><p className="eyebrow"><UserRound size={14} /> ARCADEHUB CLOUD</p><h2>{user ? '¡Qué bueno verte!' : 'Guarda tu progreso'}</h2></div></div>
+      {user ? <div className="account-panel"><div><strong>{user.email}</strong><small>Récords sincronizados en la nube</small></div><button className="edit-profile" onClick={async () => { await supabase?.auth.signOut(); setAuthMessage('Sesión cerrada.'); }}>Cerrar sesión</button></div> :
+        <form className="account-panel auth-form" onSubmit={(event) => handleAuth(event, 'signin')}>
+          <div className="auth-copy"><strong>Inicia sesión o crea tu cuenta</strong><small>Conserva tus récords al cambiar de dispositivo.</small></div>
+          <input type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="Correo electrónico" required />
+          <input type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="Contraseña (mín. 6 caracteres)" minLength={6} required />
+          <div className="auth-actions"><button className="primary-btn" disabled={authBusy || !supabase} type="submit">{authBusy ? 'Un momento…' : 'Iniciar sesión'}</button><button className="edit-profile" disabled={authBusy || !supabase} type="button" onClick={(event) => { const form = event.currentTarget.form; if (form) void handleAuth({ preventDefault: () => {}, currentTarget: form } as FormEvent<HTMLFormElement>, 'signup'); }}>Crear cuenta</button></div>
+          {!supabase && <small>La conexión aún no está configurada en esta compilación.</small>}
+          {authMessage && <small role="status">{authMessage}</small>}
+        </form>}
     </section>
     <section className="profile-section">
       <div className="profile-heading"><div><p className="eyebrow"><UserRound size={14} /> CENTRO DE JUGADOR</p><h2>Tu perfil <span className="gradient-text">arcade</span></h2></div><button className="edit-profile" onClick={renamePlayer}>Editar perfil</button></div>
