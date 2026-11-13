@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUp, ArrowDown, ArrowRight, Gamepad2, Trophy, Zap, Play, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, ArrowRight, Gamepad2, Trophy, Zap, Play, RotateCcw, Sparkles, Award, UserRound, Medal } from 'lucide-react';
 
 type GameId = 'snake' | 'dash' | 'space';
 type Point = { x: number; y: number };
@@ -129,6 +129,11 @@ function SpaceGame({ onBack, onScore }: { onBack: () => void; onScore: (score: n
 
 export default function App() {
   const [game, setGame] = useState<GameId | null>(null);
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem('arcadehub-player') || 'Jugador 1');
+  const [played, setPlayed] = useState<Record<GameId, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('arcadehub-played') || '{"snake":0,"dash":0,"space":0}'); }
+    catch { return { snake: 0, dash: 0, space: 0 }; }
+  });
   const [best, setBest] = useState<Record<GameId, number>>(() => {
     try { return JSON.parse(localStorage.getItem('arcadehub-best') || '{"snake":0,"dash":0,"space":0}'); }
     catch { return { snake: 0, dash: 0, space: 0 }; }
@@ -140,6 +145,31 @@ export default function App() {
       return next;
     });
   }, []);
+  const launchGame = (id: GameId) => {
+    setPlayed((old) => {
+      const next = { ...old, [id]: old[id] + 1 };
+      localStorage.setItem('arcadehub-played', JSON.stringify(next));
+      return next;
+    });
+    setGame(id);
+  };
+  const renamePlayer = () => {
+    const value = window.prompt('¿Cómo quieres aparecer en ArcadeHub?', playerName);
+    if (value && value.trim()) {
+      const clean = value.trim().slice(0, 18);
+      setPlayerName(clean);
+      localStorage.setItem('arcadehub-player', clean);
+    }
+  };
+  const totalPlays = Object.values(played).reduce((sum, value) => sum + value, 0);
+  const totalRecords = Object.values(best).reduce((sum, value) => sum + value, 0);
+  const achievements = [
+    { title: 'Primer despegue', detail: 'Juega tu primera partida', unlocked: totalPlays >= 1, icon: '🚀' },
+    { title: 'Rey de los píxeles', detail: 'Consigue 50 puntos en Snake X', unlocked: best.snake >= 50, icon: '🐍' },
+    { title: 'Reflejos turbo', detail: 'Consigue 10 puntos en Pixel Dash', unlocked: best.dash >= 10, icon: '⚡' },
+    { title: 'Explorador espacial', detail: 'Consigue 100 puntos en Space Tap', unlocked: best.space >= 100, icon: '🌌' },
+    { title: 'Coleccionista', detail: 'Prueba los tres minijuegos', unlocked: Object.values(played).every((value) => value > 0), icon: '🏆' }
+  ];
 
   if (game === 'snake') return <main className="app-shell"><SnakeGame onBack={() => setGame(null)} onScore={(s) => saveScore('snake', s)} /></main>;
   if (game === 'dash') return <main className="app-shell"><DashGame onBack={() => setGame(null)} onScore={(s) => saveScore('dash', s)} /></main>;
@@ -153,10 +183,19 @@ export default function App() {
     </section>
     <section id="games" className="games-section"><div className="section-head"><div><p className="eyebrow">ESCOGE TU RETO</p><h2>Catálogo <span className="gradient-text">arcade</span></h2></div><span className="game-count">03 JUEGOS DISPONIBLES</span></div>
       <div className="game-cards">
-        <button className="game-card snake-card" onClick={() => setGame('snake')}><div className="card-art snake-art"><span className="pixel-snake">▰ ▰ ▰<br />　　●</span><span className="art-label">01 / CLÁSICO</span></div><div className="card-info"><div><h3>Snake X</h3><p>El clásico que nunca falla.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.snake}</span></div></button>
-        <button className="game-card dash-card" onClick={() => setGame('dash')}><div className="card-art dash-art"><span className="dash-symbol">▦</span><span className="art-label">02 / REFLEJOS</span></div><div className="card-info"><div><h3>Pixel Dash</h3><p>Tu velocidad manda.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.dash}</span></div></button>
-        <button className="game-card space-card" onClick={() => setGame('space')}><div className="card-art space-art"><span className="planet">✦</span><span className="art-label">03 / ARCADE</span></div><div className="card-info"><div><h3>Space Tap</h3><p>La galaxia necesita tu ayuda.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.space}</span></div></button>
+        <button className="game-card snake-card" onClick={() => launchGame('snake')}><div className="card-art snake-art"><span className="pixel-snake">▰ ▰ ▰<br />　　●</span><span className="art-label">01 / CLÁSICO</span></div><div className="card-info"><div><h3>Snake X</h3><p>El clásico que nunca falla.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.snake}</span></div></button>
+        <button className="game-card dash-card" onClick={() => launchGame('dash')}><div className="card-art dash-art"><span className="dash-symbol">▦</span><span className="art-label">02 / REFLEJOS</span></div><div className="card-info"><div><h3>Pixel Dash</h3><p>Tu velocidad manda.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.dash}</span></div></button>
+        <button className="game-card space-card" onClick={() => launchGame('space')}><div className="card-art space-art"><span className="planet">✦</span><span className="art-label">03 / ARCADE</span></div><div className="card-info"><div><h3>Space Tap</h3><p>La galaxia necesita tu ayuda.</p></div><span className="card-arrow">↗</span></div><div className="card-footer"><span><Zap size={13} /> INDIVIDUAL</span><span>RÉCORD: {best.space}</span></div></button>
       </div>
+    </section>
+    <section className="profile-section">
+      <div className="profile-heading"><div><p className="eyebrow"><UserRound size={14} /> CENTRO DE JUGADOR</p><h2>Tu perfil <span className="gradient-text">arcade</span></h2></div><button className="edit-profile" onClick={renamePlayer}>Editar perfil</button></div>
+      <div className="profile-panel">
+        <div className="player-identity"><div className="player-avatar"><Gamepad2 size={27} /></div><div><strong>{playerName}</strong><small>PLAYER 01 · EN ENTRENAMIENTO</small></div></div>
+        <div className="profile-stats"><div><strong>{totalPlays}</strong><small>PARTIDAS</small></div><div><strong>{totalRecords}</strong><small>RÉCORDS SUMADOS</small></div><div><strong>{achievements.filter((item) => item.unlocked).length}/{achievements.length}</strong><small>LOGROS</small></div></div>
+      </div>
+      <div className="achievement-title"><h3><Medal size={17} /> Colección de logros</h3><span>{achievements.filter((item) => item.unlocked).length} desbloqueados</span></div>
+      <div className="achievement-grid">{achievements.map((item) => <div key={item.title} className={`achievement-card ${item.unlocked ? 'unlocked' : 'locked'}`}><span className="achievement-icon">{item.unlocked ? item.icon : '🔒'}</span><div><strong>{item.title}</strong><small>{item.detail}</small></div><Award size={16} /></div>)}</div>
     </section>
     <section className="features"><div><Trophy /><span><strong>Récords locales</strong><small>Supera tus mejores marcas.</small></span></div><div><Gamepad2 /><span><strong>Hecho para jugar</strong><small>Diseño adaptable a móvil y PC.</small></span></div><div><Sparkles /><span><strong>En construcción</strong><small>Nuevos modos llegarán pronto.</small></span></div></section>
     <footer><span>ARCADEHUB © 2026</span><span>HECHO PARA DIVERTIRSE <b>✦</b></span></footer>
