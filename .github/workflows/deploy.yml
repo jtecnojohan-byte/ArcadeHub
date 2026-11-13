@@ -61,7 +61,7 @@ jobs:
       - name: Build web app
         env:
           VITE_SUPABASE_URL: https://twzqghrphxmafnpesywz.supabase.co
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_5Lo15a2WncSZ0kn0QaFfWg_nMuJQAwg
         run: npm run build
       - name: Add Android platform
         run: npx cap add android
